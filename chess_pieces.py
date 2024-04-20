@@ -1,19 +1,18 @@
 import pygame
 
+
 class ChessPiece:
     def __init__(self, position, color):
-        self.position = position
+        self.position = position  # Position is now used for initial setup only
         self.color = color
         self.image = None
-        self.size = 100
+        self.size = 100  # Size for the pieces
 
-    def draw(self, screen, square_size):
+    def draw(self, screen, x, y, offset_y=0):
         if self.image:
-            # Resize the image to fit the square size
             resized_image = pygame.transform.scale(self.image, (self.size, self.size))
-            x = self.position[1] * square_size
-            y = self.position[0] * square_size
-            screen.blit(resized_image, (x, y))
+            screen.blit(resized_image, (x, y + offset_y))  # Apply offset_y here
+
 
 class Pawn(ChessPiece):
     def __init__(self, position, color):
