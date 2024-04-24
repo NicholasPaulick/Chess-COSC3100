@@ -95,7 +95,7 @@ class GameManager:
                 # Retrieve the last move based on the current turn
                 last_move = self.last_move_white if self.turn == 'white' else self.last_move_black
                 # Pass last_move to get_valid_moves
-                self.valid_moves = self.move_generator.get_valid_moves(self.selected_piece, last_move)
+                self.valid_moves = self.get_valid_moves(self.selected_piece, last_move)
                 return True  # Indicate that a piece was selected
         else:
             # Clicked on an empty square or an opponent's piece without a piece currently selected
@@ -194,13 +194,31 @@ class GameManager:
         # Update the turn back to the player who made the move
         self.turn = 'white' if self.turn == 'black' else 'black'
         
-        # Clear the selection and valid moves as the move has been undone
-        self.selected_piece = None
-        self.selected_square = None
-        self.valid_moves = []
-        
         return True  # Indicate that a move was successfully undone
 
+    def get_valid_moves(self, piece, last_move):
+        if isinstance(piece, Pawn):
+            moves = self.move_generator._pawn_moves(piece, last_move)
+        elif isinstance(piece, Rook):
+            moves = self.move_generator._rook_moves(piece)
+        elif isinstance(piece, Knight):
+            moves = self.move_generator._knight_moves(piece)
+        elif isinstance(piece, Bishop):
+            moves = self.move_generator._bishop_moves(piece)
+        elif isinstance(piece, Queen):
+            moves = self.move_generator._queen_moves(piece)
+        elif isinstance(piece, King):
+            moves = self.move_generator._king_moves(piece)
+        else:
+            moves = []
+        valid_moves = []
+        for each in moves:
+            original_pos = piece.position
+            self.execute_move(piece, each)
+            if not self.move_generator.is_check(piece.color):
+                valid_moves.append(each)
+            self.undo_move()
+        return valid_moves
 
     def get_all_possible_moves(self, color):
         all_moves = []
@@ -208,7 +226,7 @@ class GameManager:
             for col in range(8):
                 piece = self.board[row][col]
                 if piece and piece.color == color:
-                    valid_moves = self.move_generator.get_valid_moves(piece, self._get_last_move())
+                    valid_moves = self.get_valid_moves(piece, self._get_last_move())
                     for move in valid_moves:
                         all_moves.append((piece, move))
         return all_moves
@@ -232,19 +250,17 @@ class GameManager:
         return captured_piece
 
     def is_game_over(self):
-        # Check for checkmate or stalemate
-        white_moves = self.get_all_possible_moves('white')
-        black_moves = self.get_all_possible_moves('black')
+        # Check for checkmate
+        if self.move_generator.is_checkmate(self.turn):
+            # The current player is in checkmate, so the game is over
+            return True
 
-        if not white_moves and self.turn == 'white':
-            # No valid moves for white, so black wins
+        # Check for stalemate (no valid moves for the current player)
+        current_moves = self.move_generator.get_all_possible_moves(self.turn)
+        if not current_moves:
             return True
-        elif not black_moves and self.turn == 'black':
-            # No valid moves for black, so white wins
-            return True
-        else:
-            # Game is not over
-            return False
+
+        return False
     
     def restart_game(self, chess_board):
         self.__init__(chess_board)

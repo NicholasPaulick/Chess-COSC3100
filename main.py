@@ -69,10 +69,10 @@ while running:
             elif not dropdown.show_options:
                 adjusted_click_pos = (event.pos[0], event.pos[1])
                 game_manager.handle_board_click(adjusted_click_pos, offset_y=top_bar_height)
-    
+
     if game_manager.turn == 'black' and dropdown.selected_option.startswith("Computer"):
         # Call the negamax function to get the best move
-        depth = 4  # Adjust the depth as needed
+        depth = 2  # Adjust the depth as needed
         alpha = float('-inf')
         beta = float('inf')
         result = game_manager.move_generator.negamax(game_manager, depth, alpha, beta, -1)
