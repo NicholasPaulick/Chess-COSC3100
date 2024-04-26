@@ -10,10 +10,7 @@ class GameManager:
         self.selected_piece = None
         self.selected_square = None
         self.valid_moves = []
-        # Initialize last_move_white and last_move_black to None or a suitable default value
-        self.last_move_white = None  # Initialize as None or a default value indicating no move has been made
-        self.last_move_black = None  # Initialize as None or a default value indicating no move has been made
-        self.move_history = []
+        self.move_history = [None]
         self.move_generator = MoveGenerator(self.board)
         self.turn = 'white'
         self.setup_board()
@@ -93,7 +90,7 @@ class GameManager:
                 self.selected_piece = self.board[row][col]
                 self.selected_square = (row, col)
                 # Retrieve the last move based on the current turn
-                last_move = self.last_move_white if self.turn == 'white' else self.last_move_black
+                last_move = self.move_history[len(self.move_history)-1]
                 # Pass last_move to get_valid_moves
                 self.valid_moves = self.get_valid_moves(self.selected_piece, last_move)
                 return True  # Indicate that a piece was selected
@@ -121,18 +118,20 @@ class GameManager:
         moving_piece.position = (row, col)  # Update the piece's position attribute
     
         # Handle special moves (e.g., capturing, en passant, promotion) here
-        # This example doesn't include those details, but they would be handled based on your game's rules
+        # Check for pawn promotion
+        if isinstance(moving_piece, Pawn):
+            if moving_piece.color == 'white' and row == 0:
+                # Promote white pawn
+                promotion_piece = Queen  # Change this to the desired promotion piece
+                self.promote_pawn(moving_piece, promotion_piece)
+            elif moving_piece.color == 'black' and row == 7:
+                # Promote black pawn
+                promotion_piece = Queen  # Change this to the desired promotion piece
+                self.promote_pawn(moving_piece, promotion_piece)
     
         # Append the move to the move history
-        move_record = (moving_piece, start_pos, (row, col), target_square)
+        move_record = (moving_piece, start_pos, (row, col), target_square, self.turn)
         self.move_history.append(move_record)
-    
-        # Update last move tracking
-        last_move = (start_pos, (row, col))
-        if self.turn == 'white':
-            self.last_move_white = last_move
-        else:
-            self.last_move_black = last_move
     
         # Switch turns
         self.turn = 'black' if self.turn == 'white' else 'white'
@@ -144,12 +143,6 @@ class GameManager:
     
         # Move was successful
         return True
-
-
-    def _get_last_move(self):
-        # Helper method to get the last move based on the current turn
-        return self.last_move_white if self.turn == 'black' else self.last_move_black
-        
 
     # Add a method to highlight the selected square
     def highlight_selected_square(self, screen, square_size, offset_y=0):
@@ -179,7 +172,7 @@ class GameManager:
             return False  # Indicate that no move was undone
         
         # Retrieve the last move from the move history
-        moved_piece, start_pos, end_pos, captured_piece = self.move_history.pop()
+        moved_piece, start_pos, end_pos, captured_piece, color = self.move_history.pop()
         
         # Move the moved piece back to its start position
         self.board[end_pos[0]][end_pos[1]] = None  # Clear the target position
@@ -192,13 +185,13 @@ class GameManager:
             captured_piece.position = end_pos
         
         # Update the turn back to the player who made the move
-        self.turn = 'white' if self.turn == 'black' else 'black'
+        self.turn = color
         
         return True  # Indicate that a move was successfully undone
 
     def get_valid_moves(self, piece, last_move):
         if isinstance(piece, Pawn):
-            moves = self.move_generator._pawn_moves(piece, last_move)
+            moves = self.move_generator._pawn_moves(piece, last_move=(self.move_history[len(self.move_history)-1]))
         elif isinstance(piece, Rook):
             moves = self.move_generator._rook_moves(piece)
         elif isinstance(piece, Knight):
@@ -215,21 +208,10 @@ class GameManager:
         for each in moves:
             original_pos = piece.position
             self.execute_move(piece, each)
-            if not self.move_generator.is_check(piece.color):
+            if not self.is_check(piece.color):
                 valid_moves.append(each)
             self.undo_move()
         return valid_moves
-
-    def get_all_possible_moves(self, color):
-        all_moves = []
-        for row in range(8):
-            for col in range(8):
-                piece = self.board[row][col]
-                if piece and piece.color == color:
-                    valid_moves = self.get_valid_moves(piece, self._get_last_move())
-                    for move in valid_moves:
-                        all_moves.append((piece, move))
-        return all_moves
 
     def execute_move(self, piece, target_pos):
         # Save the current state before making the move
@@ -243,20 +225,109 @@ class GameManager:
         # Update the piece's position
         piece.position = target_pos
         # Record the move (optional, for undo functionality or history)
-        self.move_history.append((piece, original_pos, target_pos, captured_piece))
+        self.move_history.append((piece, original_pos, target_pos, captured_piece, self.turn))
 
         # Switch turns
         self.turn = 'black' if self.turn == 'white' else 'white'
         return captured_piece
 
+    def is_check(self, color):
+        """
+        Check if the king of the given color is in check.
+        """
+        king_position = self.get_king_position(color)
+        if king_position is None:
+            return False  # No king on the board, so not in check
+    
+        opponent_color = 'white' if color == 'black' else 'black'
+        opponent_moves = self.get_all_possible_moves(opponent_color)
+        for _, move in opponent_moves:
+            if move == king_position:
+                return True
+        return False
+
+    def get_king_position(self, color):
+        """
+        Get the position of the king for the given color, or None if the king is not found.
+        """
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece and isinstance(piece, King) and piece.color == color:
+                    return (row, col)
+        return None  # King not found
+
+    def is_checkmate(self, color):
+        """
+        Check if the player with the given color is in checkmate.
+        """
+        if not self.is_check(color):
+            return False
+
+        # If in check, check if there are any valid moves to get out of check
+        valid_moves = []
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece and piece.color == color:
+                    moves = self.get_valid_moves(piece, None)
+                    for move in moves:
+                        valid_moves.append((piece, move))
+        if not valid_moves:
+            return True  # No valid moves, it's checkmate
+
+    def get_all_possible_moves(self, color):
+        all_moves = []
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece and piece.color == color:
+                    moves = self.get_moves(piece, None)  # Pass None for last_move
+                    for move in moves:
+                        all_moves.append((piece, move))
+        return all_moves
+
+    def get_moves(self, piece, last_move):
+        if isinstance(piece, Pawn):
+            return self.move_generator._pawn_moves(piece, last_move)
+        elif isinstance(piece, Rook):
+            return self.move_generator._rook_moves(piece)
+        elif isinstance(piece, Knight):
+            return self.move_generator._knight_moves(piece)
+        elif isinstance(piece, Bishop):
+            return self.move_generator._bishop_moves(piece)
+        elif isinstance(piece, Queen):
+            return self.move_generator._queen_moves(piece)
+        elif isinstance(piece, King):
+            return self.move_generator._king_moves(piece)
+        else:
+            return []
+
+    def evaluate_board(self):
+        piece_values = {'Pawn': 1, 'Knight': 3, 'Bishop': 3, 'Rook': 5, 'Queen': 9, 'King': 0}
+        board_value = 0
+        for row in self.board:
+            for piece in row:
+                if piece is not None:
+                    sign = 1 if piece.color == 'white' else -1
+                    board_value += piece_values[type(piece).__name__] * sign
+        return board_value
+
+    def promote_pawn(self, pawn, promotion_piece):
+        """
+        Promote the given pawn to the specified promotion piece.
+        """
+        row, col = pawn.position
+        self.board[row][col] = promotion_piece(pawn.position, pawn.color)
+
     def is_game_over(self):
         # Check for checkmate
-        if self.move_generator.is_checkmate(self.turn):
+        if self.is_checkmate(self.turn):
             # The current player is in checkmate, so the game is over
             return True
 
         # Check for stalemate (no valid moves for the current player)
-        current_moves = self.move_generator.get_all_possible_moves(self.turn)
+        current_moves = self.get_all_possible_moves(self.turn)
         if not current_moves:
             return True
 

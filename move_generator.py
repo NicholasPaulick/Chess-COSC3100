@@ -5,26 +5,36 @@ import math
 class MoveGenerator:
     def __init__(self, board):
         self.board = board
-
-    def evaluate_board(self):
-        piece_values = {'Pawn': 1, 'Knight': 3, 'Bishop': 3, 'Rook': 5, 'Queen': 9, 'King': 0}
-        board_value = 0
-
-        for row in self.board:
-            for piece in row:
-                if piece is not None:
-                    sign = 1 if piece.color == 'white' else -1
-                    board_value += piece_values[type(piece).__name__] * sign
-
-        return board_value
+        self.killer_moves = [(None, None), (None, None)]
+        self.transposition_table = {}
 
     def negamax(self, game_manager, depth, alpha, beta, color):
+        # Check if the current position is in the transposition table
+        position_key = self.get_position_key(game_manager.board)
+        if position_key in self.transposition_table:
+            entry = self.transposition_table[position_key]
+            if entry['depth'] >= depth and entry['turn'] == game_manager.turn:
+                return entry['value']
+
+        
         if depth == 0:
-            return self.evaluate_board()
+            return game_manager.evaluate_board()
     
-        all_possible_moves = game_manager.get_all_possible_moves(game_manager.turn)
+        all_possible_moves = []
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece and piece.color == game_manager.turn:
+                    moves = game_manager.get_valid_moves(piece, None)
+                    for move in moves:
+                        all_possible_moves.append((piece, move))
+
         if not all_possible_moves:
-            return color * self.evaluate_board()
+            return color * game_manager.evaluate_board()
+        
+        # Order the moves based on the killer heuristic
+        all_possible_moves = self.order_moves(all_possible_moves, game_manager.turn)
+
         max_eval = float('-inf')
         best_move = None
         for move in all_possible_moves:
@@ -44,8 +54,32 @@ class MoveGenerator:
             alpha = max(alpha, eval)
             if beta <= alpha:
                 break
+        
+        self.transposition_table[position_key] = {
+            'value': (best_move, max_eval) if best_move else max_eval,
+            'depth': depth,
+            'turn': game_manager.turn
+        }
         return (best_move, max_eval) if best_move else max_eval
 
+    def order_moves(self, moves, turn):
+        ordered_moves = []
+        for move in moves:
+            if move == self.killer_moves[0]:
+                ordered_moves.insert(0, move)
+            elif move == self.killer_moves[1]:
+                ordered_moves.insert(1, move)
+            else:
+                ordered_moves.append(move)
+        # Update the killer moves based on the current turn
+        self.killer_moves[1] = self.killer_moves[0]
+        self.killer_moves[0] = (None, None)
+        return ordered_moves
+
+    def get_position_key(self, board):
+        # Generate a unique key for the current position
+        key = ''.join(str(piece) for row in board for piece in row if piece)
+        return key
 
     def _pawn_moves(self, pawn, last_move):
         moves = []
@@ -59,27 +93,30 @@ class MoveGenerator:
             if (pawn.color == 'white' and row == 6) or (pawn.color == 'black' and row == 1) and self._is_empty((row + 2 * direction, col)):
                 moves.append((row + 2 * direction, col))
 
-        # Diagonal captures
+        # Diagonal captures for en passant
         for dx in [-1, 1]:
             diag_pos = (row + direction, col + dx)
             if 0 <= diag_pos[1] < 8:  # Ensure it's on the board
                 if self._is_opponent_piece(diag_pos, pawn.color):
                     moves.append(diag_pos)
-                # En Passant capture move
-                elif row == en_passant_row and self._is_en_passant(pawn, diag_pos, last_move):
-                    en_passant_capture_pos = (row + direction, col + dx)  # Square pawn moves to
-                    moves.append(en_passant_capture_pos)
-
+                elif row == en_passant_row:  # Check if pawn is in correct row for en passant
+                    if self._is_en_passant(pawn, (row, col + dx), last_move):
+                        en_passant_capture_pos = (row + direction, col + dx)  # Square pawn moves to capture
+                        moves.append(en_passant_capture_pos)
         return moves
 
-    def _is_en_passant(self, pawn, capture_pos, last_move):
+    def _is_en_passant(self, pawn, target_pos, last_move):
         if not last_move:
             return False
-        start_pos, end_pos = last_move
-        if abs(start_pos[0] - end_pos[0]) == 2 and end_pos[0] == pawn.position[0] and abs(end_pos[1] - pawn.position[1]) == 1:
-            # The opponent's pawn moved two squares and ended adjacent to our pawn
-            return True
+        _, start_pos, end_pos, _, moved_piece_color = last_move
+        # Check if the last moved piece was a pawn, it moved two squares vertically, and is adjacent to the current pawn's position
+        if isinstance(last_move[0], Pawn) and moved_piece_color != pawn.color:
+            # Correct row and the column is directly adjacent
+            if abs(start_pos[0] - end_pos[0]) == 2 and end_pos[0] == pawn.position[0] and end_pos[1] == target_pos[1]:
+                return True
         return False
+
+
 
     def _rook_moves(self, rook):
         moves = []
@@ -198,90 +235,6 @@ class MoveGenerator:
                     moves.append((new_row, new_col))
 
         return moves
-
-    def is_check(self, color):
-        """
-        Check if the king of the given color is in check.
-        """
-        king_position = self.get_king_position(color)
-        if king_position is None:
-            return False  # No king on the board, so not in check
-    
-        opponent_color = 'white' if color == 'black' else 'black'
-        opponent_moves = self.get_all_possible_moves(opponent_color)
-        for _, move in opponent_moves:
-            if move == king_position:
-                return True
-        return False
-
-    def get_king_position(self, color):
-        """
-        Get the position of the king for the given color, or None if the king is not found.
-        """
-        for row in range(8):
-            for col in range(8):
-                piece = self.board[row][col]
-                if piece and isinstance(piece, King) and piece.color == color:
-                    return (row, col)
-        return None  # King not found
-
-    def is_checkmate(self, color):
-        """
-        Check if the player with the given color is in checkmate.
-        """
-        if not self.is_check(color):
-            return False
-
-        # If in check, check if there are any valid moves to get out of check
-        valid_moves = self.get_all_possible_moves(color)
-        if not valid_moves:
-            return True  # No valid moves, it's checkmate
-
-        # Move the king to each valid position and check if it's still in check
-        king_position = self.get_king_position(color)
-        for piece, move in valid_moves:
-            if isinstance(piece, King):
-                self.board[move[0]][move[1]] = piece
-                self.board[king_position[0]][king_position[1]] = None
-                piece.position = move
-                if not self.is_check(color):
-                    # Found a valid move to get out of check, it's not checkmate
-                    self.board[king_position[0]][king_position[1]] = piece
-                    self.board[move[0]][move[1]] = None
-                    piece.position = king_position
-                    return False
-                self.board[king_position[0]][king_position[1]] = piece
-                self.board[move[0]][move[1]] = None
-                piece.position = king_position
-
-        return True  # No valid moves to get out of check, it's checkmate
-
-    def get_all_possible_moves(self, color):
-        all_moves = []
-        for row in range(8):
-            for col in range(8):
-                piece = self.board[row][col]
-                if piece and piece.color == color:
-                    valid_moves = self.get_moves(piece, None)  # Pass None for last_move
-                    for move in valid_moves:
-                        all_moves.append((piece, move))
-        return all_moves
-
-    def get_moves(self, piece, last_move):
-        if isinstance(piece, Pawn):
-            return self._pawn_moves(piece, last_move)
-        elif isinstance(piece, Rook):
-            return self._rook_moves(piece)
-        elif isinstance(piece, Knight):
-            return self._knight_moves(piece)
-        elif isinstance(piece, Bishop):
-            return self._bishop_moves(piece)
-        elif isinstance(piece, Queen):
-            return self._queen_moves(piece)
-        elif isinstance(piece, King):
-            return self._king_moves(piece)
-        else:
-            return []
 
     def _is_empty(self, position):
         row, col = position

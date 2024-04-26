@@ -69,14 +69,20 @@ while running:
             elif not dropdown.show_options:
                 adjusted_click_pos = (event.pos[0], event.pos[1])
                 game_manager.handle_board_click(adjusted_click_pos, offset_y=top_bar_height)
+    if game_manager.is_check('white'):
+        print("checked")
+    if (game_manager.is_checkmate('white')):
+        print("black mated white")
+    elif (game_manager.is_checkmate('black')):
+        print("white mated black")
 
     if game_manager.turn == 'black' and dropdown.selected_option.startswith("Computer"):
         # Call the negamax function to get the best move
-        depth = 2  # Adjust the depth as needed
+        depth = 4  # Adjust the depth as needed
         alpha = float('-inf')
         beta = float('inf')
         result = game_manager.move_generator.negamax(game_manager, depth, alpha, beta, -1)
-        print(result)
+        print(f"Selected {result}")
         if isinstance(result, tuple):
             best_move, _ = result
             piece, target_pos = best_move
