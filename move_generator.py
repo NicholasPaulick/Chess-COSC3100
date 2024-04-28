@@ -1,85 +1,50 @@
 from chess_pieces import Pawn, Rook, Knight, Bishop, Queen, King
 import math
-
+from collections import defaultdict
 
 class MoveGenerator:
     def __init__(self, board):
         self.board = board
-        self.killer_moves = [(None, None), (None, None)]
-        self.transposition_table = {}
+        self.move_tables = {
+            Pawn: self._pawn_moves,
+            Rook: self._rook_moves,
+            Knight: self._knight_moves,
+            Bishop: self._bishop_moves,
+            Queen: self._queen_moves,
+            King: self._king_moves,
+        }
 
     def negamax(self, game_manager, depth, alpha, beta, color):
-        # Check if the current position is in the transposition table
-        position_key = self.get_position_key(game_manager.board)
-        if position_key in self.transposition_table:
-            entry = self.transposition_table[position_key]
-            if entry['depth'] >= depth and entry['turn'] == game_manager.turn:
-                return entry['value']
+        # Check for game over conditions
+        if depth == 0 or game_manager.is_game_over():
+            evaluation = color * game_manager.evaluate_board()
+            return evaluation, None
 
-        
-        if depth == 0:
-            return game_manager.evaluate_board()
-    
-        all_possible_moves = []
-        for row in range(8):
-            for col in range(8):
-                piece = self.board[row][col]
-                if piece and piece.color == game_manager.turn:
-                    moves = game_manager.get_valid_moves(piece, None)
-                    for move in moves:
-                        all_possible_moves.append((piece, move))
+        text_color = 'black' if color == -1 else 'white'
+        all_possible_moves = self.get_all_possible_moves(game_manager, text_color)
 
         if not all_possible_moves:
-            return color * game_manager.evaluate_board()
-        
-        # Order the moves based on the killer heuristic
-        all_possible_moves = self.order_moves(all_possible_moves, game_manager.turn)
+            evaluation = color * game_manager.evaluate_board()
+            return evaluation, None
 
         max_eval = float('-inf')
         best_move = None
         for move in all_possible_moves:
             piece, target_pos = move
-            original_pos = piece.position
-            game_manager.execute_move(piece, target_pos)
-            result = self.negamax(game_manager, depth - 1, -beta, -alpha, -color)
+            original_position = piece.position
+            game_manager.move_piece(target_pos[0], target_pos[1], piece)
+            eval, _ = self.negamax(game_manager, depth - 1, -beta, -alpha, -color)  # always return eval and move
             game_manager.undo_move()
-            if isinstance(result, tuple):
-                _, eval = result
-                eval = -eval
-            else:
-                eval = result
+            piece.move(original_position)  # Restore the piece's position
+            eval = -eval  # Negate eval since it's a minimizing move from the opponent's perspective
+
             if eval > max_eval:
                 max_eval = eval
                 best_move = move
-            alpha = max(alpha, eval)
-            if beta <= alpha:
-                break
-        
-        self.transposition_table[position_key] = {
-            'value': (best_move, max_eval) if best_move else max_eval,
-            'depth': depth,
-            'turn': game_manager.turn
-        }
-        return (best_move, max_eval) if best_move else max_eval
-
-    def order_moves(self, moves, turn):
-        ordered_moves = []
-        for move in moves:
-            if move == self.killer_moves[0]:
-                ordered_moves.insert(0, move)
-            elif move == self.killer_moves[1]:
-                ordered_moves.insert(1, move)
-            else:
-                ordered_moves.append(move)
-        # Update the killer moves based on the current turn
-        self.killer_moves[1] = self.killer_moves[0]
-        self.killer_moves[0] = (None, None)
-        return ordered_moves
-
-    def get_position_key(self, board):
-        # Generate a unique key for the current position
-        key = ''.join(str(piece) for row in board for piece in row if piece)
-        return key
+                if max_eval >= beta:
+                    break
+            alpha = max(alpha, eval)  # Update alpha correctly based on negated evaluation
+        return (max_eval, best_move)
 
     def _pawn_moves(self, pawn, last_move):
         moves = []
@@ -116,35 +81,20 @@ class MoveGenerator:
                 return True
         return False
 
-
-
     def _rook_moves(self, rook):
         moves = []
         directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # Right, Down, Left, Up
         row, col = rook.position
 
         for d in directions:
-            for i in range(1, 8):  # Maximum board size in one direction
-                new_row = row + d[0] * i
-                new_col = col + d[1] * i
-                if 0 <= new_row < 8 and 0 <= new_col < 8:  # Check if within board bounds
-                    if self.board[new_row][new_col] is None:  # Empty square
-                        moves.append((new_row, new_col))
-                    elif self.board[new_row][new_col].color != rook.color:  # Capture opponent's piece
-                        moves.append((new_row, new_col))
-                        break  # Can't move further in this direction
-                    else:
-                        break  # Blocked by a piece of the same color
-                else:
-                    break  # Off the board
+            self._get_sliding_moves(row, col, d, moves, rook.color)
 
         return moves
-
 
     def _knight_moves(self, knight):
         moves = []
         # Knight's movement options (L-shapes)
-        move_offsets = [(-2, -1), (-2, 1), (-1, -2), (-1, 2), 
+        move_offsets = [(-2, -1), (-2, 1), (-1, -2), (-1, 2),
                         (1, -2), (1, 2), (2, -1), (2, 1)]
 
         row, col = knight.position  # Assuming each piece has a 'position' attribute
@@ -162,7 +112,6 @@ class MoveGenerator:
 
         return moves
 
-
     def _bishop_moves(self, bishop):
         moves = []
         # Diagonal movement directions: top-right, bottom-right, bottom-left, top-left
@@ -171,22 +120,7 @@ class MoveGenerator:
         row, col = bishop.position  # Assuming each piece has a 'position' attribute
 
         for d in directions:
-            for i in range(1, 8):  # The board is 8x8, so we limit the steps to 7 in any direction
-                new_row = row + d[0] * i
-                new_col = col + d[1] * i
-
-                # Check if new position is off the board
-                if not (0 <= new_row < 8 and 0 <= new_col < 8):
-                    break  # Break if moving off the board
-                
-                target = self.board[new_row][new_col]
-                if target is None:
-                    moves.append((new_row, new_col))  # Empty square is a valid move
-                elif target.color != bishop.color:
-                    moves.append((new_row, new_col))  # Capture opponent's piece
-                    break  # Cannot move past this piece
-                else:
-                    break  # Blocked by a piece of the same color
+            self._get_sliding_moves(row, col, d, moves, bishop.color)
 
         return moves
 
@@ -195,26 +129,9 @@ class MoveGenerator:
         moves = []
         # Combine directions for rook and bishop
         directions = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, -1), (-1, 1)]
-
         row, col = queen.position  # Assuming each piece has a 'position' attribute
-
         for d in directions:
-            for i in range(1, 8):
-                new_row = row + d[0] * i
-                new_col = col + d[1] * i
-
-                if 0 <= new_row < 8 and 0 <= new_col < 8:
-                    target = self.board[new_row][new_col]
-                    if target is None:
-                        moves.append((new_row, new_col))
-                    elif target.color != queen.color:
-                        moves.append((new_row, new_col))
-                        break
-                    else:
-                        break
-                else:
-                    break
-
+            self._get_sliding_moves(row, col, d, moves, queen.color)
         return moves
 
 
@@ -244,3 +161,41 @@ class MoveGenerator:
         row, col = position
         piece = self.board[row][col]
         return piece is not None and piece.color != color
+
+    def _get_sliding_moves(self, row, col, direction, moves, color):
+        """
+        Helper function to get sliding moves for rooks, bishops, and queens.
+        """
+        dr, dc = direction
+        for i in range(1, 8):
+            new_row = row + dr * i
+            new_col = col + dc * i
+            if 0 <= new_row < 8 and 0 <= new_col < 8:
+                target = self.board[new_row][new_col]
+                if target is None:
+                    moves.append((new_row, new_col))
+                elif target.color != color:
+                    moves.append((new_row, new_col))
+                    break
+                else:
+                    break
+            else:
+                break
+
+    def get_all_possible_moves(self, game_manager, color):
+        all_moves = []
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece and piece.color == color:
+                    moves = game_manager.get_moves(piece, game_manager.move_history[-1])
+                    valid_moves = []
+                    for move in moves:
+                        original_pos = piece.position
+                        game_manager.move_piece(move[0], move[1], piece)
+                        if not game_manager.is_check(piece.color):
+                            valid_moves.append((piece, move))
+                        game_manager.undo_move()
+                        piece.move(original_pos)  # Restore the piece's position
+                    all_moves.extend(valid_moves)
+        return all_moves

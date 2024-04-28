@@ -69,12 +69,12 @@ while running:
             elif not dropdown.show_options:
                 adjusted_click_pos = (event.pos[0], event.pos[1])
                 game_manager.handle_board_click(adjusted_click_pos, offset_y=top_bar_height)
-    if game_manager.is_check('white'):
-        print("checked")
-    if (game_manager.is_checkmate('white')):
-        print("black mated white")
-    elif (game_manager.is_checkmate('black')):
-        print("white mated black")
+    #if game_manager.is_check('white'):
+    #    print("checked")
+    #if (game_manager.is_checkmate('white')):
+    #    print("black mated white")
+    #elif (game_manager.is_checkmate('black')):
+    #    print("white mated black")
 
     if game_manager.turn == 'black' and dropdown.selected_option.startswith("Computer"):
         # Call the negamax function to get the best move
@@ -84,7 +84,7 @@ while running:
         result = game_manager.move_generator.negamax(game_manager, depth, alpha, beta, -1)
         print(f"Selected {result}")
         if isinstance(result, tuple):
-            best_move, _ = result
+            _, best_move = result
             piece, target_pos = best_move
             game_manager.move_piece(target_pos[0], target_pos[1], piece)
 
