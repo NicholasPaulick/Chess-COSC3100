@@ -160,7 +160,7 @@ class GameManager:
         score = 0
         is_ahead = self.check_if_ahead()
 
-        material_value = self.evaluate_material() * (1.5 if is_ahead else 1)
+        material_value = self.evaluate_material()
 
         pawn_structure_score = self.evaluate_pawn_structure() * (1.5 if is_ahead else 1)
         king_safety_score = self.evaluate_king_safety() * (1.2 if not is_ahead else 1.5)
@@ -180,9 +180,9 @@ class GameManager:
 
         # Incorporate other factors
         if self.turn == 'white':
-            score += (material_score + pawn_structure_score + king_safety_score + center_control_score + mobility_score + tactics_score + coordination_score + development_score + advanced_king_safety_score + pawn_chains_blocks_score)
+            score += (material_value + pawn_structure_score + king_safety_score + center_control_score + mobility_score + tactics_score + coordination_score + development_score + advanced_king_safety_score + pawn_chains_blocks_score)
         else:
-            score -= (material_score + pawn_structure_score + king_safety_score + center_control_score + mobility_score + tactics_score + coordination_score + development_score + advanced_king_safety_score + pawn_chains_blocks_score)
+            score -= (material_value + pawn_structure_score + king_safety_score + center_control_score + mobility_score + tactics_score + coordination_score + development_score + advanced_king_safety_score + pawn_chains_blocks_score)
         return score
 
     def evaluate_material(self):
