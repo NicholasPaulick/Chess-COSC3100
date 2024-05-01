@@ -1,52 +1,41 @@
-import pygame
-
 class ChessPiece:
     def __init__(self, position, color):
-        self.position = position
+        self.row, self.col = position
         self.color = color
         self.image = None
-        self.size = 100  # Size for the pieces
-
-    def draw(self, screen, x, y, offset_y=0):
-        if self.image:
-            resized_image = pygame.transform.scale(self.image, (self.size, self.size))
-            screen.blit(resized_image, (x, y + offset_y))  # Apply offset_y here
 
     def move(self, new_position):
-        self.position = new_position
+        self.row, self.col = new_position
 
+    def get_pygame_pos(self, square_size):
+        return (self.col * square_size, (7 - self.row) * square_size)
 
 class Pawn(ChessPiece):
     def __init__(self, position, color):
         super().__init__(position, color)
-        self.image = pygame.image.load(f'images/{color}-pawn.png')
-
+        self.image = '♙' if color == 'white' else '♟'
 
 class King(ChessPiece):
     def __init__(self, position, color):
         super().__init__(position, color)
-        self.image = pygame.image.load(f'images/{color}-king.png')
-
+        self.image = '♔' if color == 'white' else '♚'
 
 class Queen(ChessPiece):
     def __init__(self, position, color):
         super().__init__(position, color)
-        self.image = pygame.image.load(f'images/{color}-queen.png')
-
+        self.image = '♕' if color == 'white' else '♛'
 
 class Bishop(ChessPiece):
     def __init__(self, position, color):
         super().__init__(position, color)
-        self.image = pygame.image.load(f'images/{color}-bishop.png')
-
+        self.image = '♗' if color == 'white' else '♝'
 
 class Knight(ChessPiece):
     def __init__(self, position, color):
         super().__init__(position, color)
-        self.image = pygame.image.load(f'images/{color}-knight.png')
-
+        self.image = '♘' if color == 'white' else '♞'
 
 class Rook(ChessPiece):
     def __init__(self, position, color):
         super().__init__(position, color)
-        self.image = pygame.image.load(f'images/{color}-rook.png')
+        self.image = '♖' if color == 'white' else '♜'

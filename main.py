@@ -1,9 +1,9 @@
-# main.py
+from game_manager import GameManager
+from move_generator import MoveGenerator
 import pygame
 import sys
 from chess_board import ChessBoard
-from game_manager import GameManager
-from dropdown import Dropdown
+from pygame_helpers import draw_text, draw_board_and_pieces, handle_board_click
 
 # Initialize Pygame
 pygame.init()
@@ -21,9 +21,16 @@ BUTTON_HOVER_COLOR = pygame.Color('slategray')
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption('Chess Game')
 
+# Players
+white = 'p'
+black = 'p'
+depth = 2
+num_processes = 1
+
 # Chess board and game manager
+game_manager = GameManager()
+move_generator = MoveGenerator()
 chess_board = ChessBoard()
-game_manager = GameManager(chess_board)
 game_manager.setup_board()
 
 # Fonts
@@ -35,9 +42,9 @@ board_height = chess_board.square_size * 8
 top_bar_height = 50
 bottom_bar_height = SCREEN_HEIGHT - board_height - top_bar_height
 
-# Set up dropdown menu
-dropdown_options = ["Player", "Computer - Easy", "Computer - Medium", "Computer - Hard", "Computer - Impossible"]
-dropdown = Dropdown(10, 10, 200, 30, font, "Player", dropdown_options)
+# Define solve button area
+white_solve_button_rect = pygame.Rect(SCREEN_WIDTH - 300, SCREEN_HEIGHT - bottom_bar_height + 10, 125, 25)
+black_solve_button_rect = pygame.Rect(SCREEN_WIDTH - 150, bottom_bar_height - 40, 125, 25)
 
 # Define button areas for undo and restart
 undo_button_rect = pygame.Rect(SCREEN_WIDTH - 150, SCREEN_HEIGHT - bottom_bar_height + 10, 70, 25)
@@ -61,49 +68,53 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            dropdown.handle_event(event)
             if undo_button_rect.collidepoint(event.pos):
                 game_manager.undo_move()
             elif restart_button_rect.collidepoint(event.pos):
-                game_manager.restart_game(chess_board)
-            elif not dropdown.show_options:
-                adjusted_click_pos = (event.pos[0], event.pos[1])
-                game_manager.handle_board_click(adjusted_click_pos, offset_y=top_bar_height)
-    #if game_manager.is_check('white'):
-    #    print("checked")
-    #if (game_manager.is_checkmate('white')):
-    #    print("black mated white")
-    #elif (game_manager.is_checkmate('black')):
-    #    print("white mated black")
-
-    if game_manager.turn == 'black' and dropdown.selected_option.startswith("Computer"):
-        # Call the negamax function to get the best move
-        depth = 4  # Adjust the depth as needed
-        alpha = float('-inf')
-        beta = float('inf')
-        result = game_manager.move_generator.negamax(game_manager, depth, alpha, beta, -1)
-        print(f"Selected {result}")
-        if isinstance(result, tuple):
-            _, best_move = result
-            piece, target_pos = best_move
-            game_manager.move_piece(target_pos[0], target_pos[1], piece)
+                game_manager.setup_board()
+            elif white_solve_button_rect.collidepoint(event.pos):
+                if white == 'p':
+                    white = 'q'
+                else:
+                    white = 'p'
+            elif black_solve_button_rect.collidepoint(event.pos):
+                if black == 'p':
+                    black = 'q'
+                else:
+                    black = 'p'
+            else:
+                if (white == 'p' and game_manager.turn == 'white') or (black == 'p' and game_manager.turn == 'black'):
+                    adjusted_click_pos = (event.pos[0], event.pos[1])
+                    handle_board_click(adjusted_click_pos, top_bar_height, chess_board.square_size, game_manager)
+                elif white != 'p' and game_manager.turn == 'white':
+                    result = move_generator.parallel_search(game_manager, depth, 1, num_processes)
+                    print(result)
+                    _, best_move = result
+                    start_pos, target_pos = best_move
+                    game_manager.make_move(start_pos, target_pos)
+                elif black != 'p' and game_manager.turn == 'black':
+                    result = move_generator.parallel_search(game_manager, depth, -1, num_processes)
+                    print(result)
+                    _, best_move = result
+                    start_pos, target_pos = best_move
+                    game_manager.make_move(start_pos, target_pos)
 
 
     screen.fill(BACKGROUND_COLOR)
     pygame.draw.rect(screen, BAR_COLOR, (0, 0, SCREEN_WIDTH, top_bar_height))
     pygame.draw.rect(screen, BAR_COLOR, (0, SCREEN_HEIGHT - bottom_bar_height, SCREEN_WIDTH, bottom_bar_height))
     chess_board.draw(screen, offset_y=top_bar_height)
-    game_manager.highlight_valid_moves(screen, chess_board.square_size, offset_y=top_bar_height)
-    game_manager.draw_pieces(screen, chess_board.square_size, offset_y=top_bar_height)
-    game_manager.highlight_selected_square(screen, chess_board.square_size, offset_y=top_bar_height)
-    dropdown.draw(screen)
-    screen.blit(font.render("Player", True, TEXT_COLOR), (10, SCREEN_HEIGHT - bottom_bar_height + 15))
+    pieces = game_manager.get_pieces()
+    draw_board_and_pieces(screen, chess_board, chess_board.square_size, pieces, offset_y=top_bar_height)
 
-    elapsed_time = (pygame.time.get_ticks() - game_manager.start_ticks) // 1000
-    time_left = max(game_manager.total_time - elapsed_time, 0)
-    minutes, seconds = divmod(time_left, 60)
-    screen.blit(font.render(f'Time: {minutes:02}:{seconds:02}', True, TEXT_COLOR), (SCREEN_WIDTH / 2 - 50, SCREEN_HEIGHT - bottom_bar_height + 15))
+    #player icons
+    p1_txt = "Player 1 (White)" if white == 'p' else "Bot (White)"
+    p2_txt = "Player 2 (Black)" if black == 'p' else "Bot (Black)"
+    screen.blit(font.render(p1_txt, True, TEXT_COLOR), (10, SCREEN_HEIGHT - bottom_bar_height + 15))
+    screen.blit(font.render(p2_txt, True, TEXT_COLOR), (10, bottom_bar_height - 40))
 
+    draw_button(white_solve_button_rect, "Solve White", mouse_pos)
+    draw_button(black_solve_button_rect, "Solve Black", mouse_pos)
     draw_button(undo_button_rect, "Undo", mouse_pos)
     draw_button(restart_button_rect, "Reset", mouse_pos)
 
