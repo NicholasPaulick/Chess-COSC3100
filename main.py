@@ -25,7 +25,7 @@ pygame.display.set_caption('Chess Game')
 white = 'p'
 black = 'p'
 depth = 2
-num_processes = 1
+num_processes = 3
 
 # Chess board and game manager
 game_manager = GameManager()
@@ -88,12 +88,20 @@ while running:
                     handle_board_click(adjusted_click_pos, top_bar_height, chess_board.square_size, game_manager)
                 elif white != 'p' and game_manager.turn == 'white':
                     result = move_generator.parallel_search(game_manager, depth, 1, num_processes)
+                    if result == (float('-inf'), None):
+                        print("Black Won The Game!")
+                        game_manager.setup_board()
+                        continue
                     print(result)
                     _, best_move = result
                     start_pos, target_pos = best_move
                     game_manager.make_move(start_pos, target_pos)
                 elif black != 'p' and game_manager.turn == 'black':
                     result = move_generator.parallel_search(game_manager, depth, -1, num_processes)
+                    if result == (float('inf'), None):
+                        print("White Won The Game!")
+                        game_manager.setup_board()
+                        continue
                     print(result)
                     _, best_move = result
                     start_pos, target_pos = best_move
@@ -105,7 +113,7 @@ while running:
     pygame.draw.rect(screen, BAR_COLOR, (0, SCREEN_HEIGHT - bottom_bar_height, SCREEN_WIDTH, bottom_bar_height))
     chess_board.draw(screen, offset_y=top_bar_height)
     pieces = game_manager.get_pieces()
-    draw_board_and_pieces(screen, chess_board, chess_board.square_size, pieces, offset_y=top_bar_height)
+    draw_board_and_pieces(game_manager, screen, chess_board, chess_board.square_size, pieces, offset_y=top_bar_height)
 
     #player icons
     p1_txt = "Player 1 (White)" if white == 'p' else "Bot (White)"

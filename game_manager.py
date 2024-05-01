@@ -48,13 +48,24 @@ class GameManager:
         if piece_captured:
             self.update_bitboard(to_pos, piece_captured, captured_color, remove=True)
         
-        # Remove the piece from the original position
-        self.update_bitboard(from_pos, piece_moved, moved_color, remove=True)
-        # Add the piece to the new position
-        self.update_bitboard(to_pos, piece_moved, moved_color, remove=False)
+        # Check for pawn promotion
+        if piece_moved == 'pawns' and self.is_pawn_promotion(to_pos, moved_color):
+            self.update_bitboard(from_pos, piece_moved, moved_color, remove=True)
+            self.update_bitboard(to_pos, 'queens', moved_color, remove=False)
+        else:
+            self.update_bitboard(from_pos, piece_moved, moved_color, remove=True)
+            self.update_bitboard(to_pos, piece_moved, moved_color, remove=False)
         
         # Switch turns
         self.turn = 'black' if self.turn == 'white' else 'white'
+
+    def is_pawn_promotion(self, pos, piece_color):
+        rank = pos // 8
+        if piece_color == 'white' and rank == 7:
+            return True
+        elif piece_color == 'black' and rank == 0:
+            return True
+        return False
 
     def undo_move(self):
         if not self.move_history:
@@ -65,6 +76,10 @@ class GameManager:
         from_pos = last_move['from_pos']
         to_pos = last_move['to_pos']
         piece_captured, captured_color = last_move['captured']
+
+        if piece_moved == 'pawns' and self.is_pawn_promotion(to_pos, moved_color):
+            self.update_bitboard(to_pos, 'queens', moved_color, remove=True)
+            self.update_bitboard(from_pos, piece_moved, moved_color, remove=False)
         
         # Move the piece back
         self.update_bitboard(to_pos, piece_moved, moved_color, remove=True)
@@ -78,7 +93,6 @@ class GameManager:
         self.turn = 'black' if self.turn == 'white' else 'white'
 
     def get_valid_moves(self, pos):
-        # This is a simplified placeholder for generating moves
         piece, piece_color = self.get_piece_at_position(pos)
         valid_moves = []
         match piece:
@@ -94,7 +108,6 @@ class GameManager:
                 valid_moves.extend(self.queen_moves(pos, piece_color))
             case 'kings':
                 valid_moves.extend(self.king_moves(pos, piece_color))
-        # Add other pieces move logic here
         return valid_moves
 
     def update_bitboard(self, pos, piece_type, color, remove=False):
@@ -156,50 +169,63 @@ class GameManager:
 
 
     # Evaluation
-    def evaluate_board(self):
+    def evaluate_board(self, turn_color):
         score = 0
-        is_ahead = self.check_if_ahead()
+        is_ahead = self.check_if_ahead(turn_color)
 
-        material_value = self.evaluate_material()
+        factors = {
+            "material": self.evaluate_material(turn_color),
+            "pawn_structure": self.evaluate_pawn_structure(turn_color),
+            "king_safety": self.evaluate_king_safety(turn_color),
+            "center_control": self.evaluate_center_control(turn_color),
+            "mobility": self.evaluate_mobility(turn_color),
+            "tactics": self.evaluate_tactics(turn_color),
+            "coordination": self.evaluate_coordination(turn_color),
+            "development": self.evaluate_development(turn_color),
+            "advanced_king_safety": self.evaluate_advanced_king_safety(turn_color),
+            "pawn_chains_blocks": self.evaluate_pawn_chains_and_blocks(turn_color)
+        }
 
-        pawn_structure_score = self.evaluate_pawn_structure() * (1.5 if is_ahead else 1)
-        king_safety_score = self.evaluate_king_safety() * (1.2 if not is_ahead else 1.5)
-        center_control_score = self.evaluate_center_control() * (1.5 if not is_ahead else 1)
-        mobility_score = self.evaluate_mobility() * (0.3 if not is_ahead else 0.1)
-        tactics_score = self.evaluate_tactics() * (0.8 if not is_ahead else 0.3)
-        coordination_score = self.evaluate_coordination() * (0.2 if not is_ahead else 0.1)
-        development_score = self.evaluate_development() * (0.7 if not is_ahead else 0.3)
-        advanced_king_safety_score = self.evaluate_advanced_king_safety() * (0.5 if not is_ahead else 1)
-        pawn_chains_blocks_score = self.evaluate_pawn_chains_and_blocks() * (0.4 if not is_ahead else 0.2)
+        # Adjust scores based on game state
+        multipliers = {
+            "pawn_structure": 1.5 if is_ahead else 1,
+            "king_safety": 1.2 if not is_ahead else 1.5,
+            "center_control": 1.5 if not is_ahead else 1,
+            "mobility": 0.3 if not is_ahead else 0.1,
+            "tactics": 0.8 if not is_ahead else 0.3,
+            "coordination": 0.2 if not is_ahead else 0.1,
+            "development": 0.7 if not is_ahead else 0.3,
+            "advanced_king_safety": 0.5 if not is_ahead else 1,
+            "pawn_chains_blocks": 0.4 if not is_ahead else 0.2
+        }
 
-        # Check for checkmate
+        # Calculate total score by applying multipliers
+        for key, base_score in factors.items():
+            score += base_score * multipliers.get(key, 1)
+
+        # Check for checkmate situations
         if self.is_checkmate('white'):
-            return -200000
+            return -200000 if turn_color == 'white' else 200000
         elif self.is_checkmate('black'):
-            return 200000
+            return 200000 if turn_color == 'white' else -200000
 
-        # Incorporate other factors
-        if self.turn == 'white':
-            score += (material_value + pawn_structure_score + king_safety_score + center_control_score + mobility_score + tactics_score + coordination_score + development_score + advanced_king_safety_score + pawn_chains_blocks_score)
-        else:
-            score -= (material_value + pawn_structure_score + king_safety_score + center_control_score + mobility_score + tactics_score + coordination_score + development_score + advanced_king_safety_score + pawn_chains_blocks_score)
+        # Score adjustment based on turn
         return score
 
-    def evaluate_material(self):
+    def evaluate_material(self, turn_color):
         piece_values = {'pawns': 1, 'knights': 3, 'bishops': 3.5, 'rooks': 5, 'queens': 9, 'kings': 200}
         score = 0
         for pos in range(64):
             piece, color = self.get_piece_at_position(pos)
             if piece:
-                score += piece_values[piece] if color == self.turn else -piece_values[piece]
+                score += piece_values[piece] if color == turn_color else -piece_values[piece]
         return score
 
-    def check_if_ahead(self):
-        # Check if the engine is significantly ahead in material or position
-        material_difference = self.evaluate_material()
-        return material_difference > 8
+    def check_if_ahead(self, turn_color):
+        material_difference = self.evaluate_material(turn_color)
+        return material_difference > 10
 
-    def evaluate_tactics(self):
+    def evaluate_tactics(self, turn_color):
         score = 0
         # This is a simple implementation idea; more detailed checking based on actual piece moves is needed
         for pos in range(64):
@@ -210,13 +236,13 @@ class GameManager:
                     # Check if multiple captures are possible
                     capture_moves = [move for move in moves if self.get_piece_at_position(move)]
                     if len(capture_moves) > 1:
-                        if color == 'white':
+                        if color == turn_color:
                             score += 3  # Adding a simple bonus for potential forks
                         else:
                             score -= 3
         return score
 
-    def evaluate_coordination(self):
+    def evaluate_coordination(self, turn_color):
         score = 0
         # Check for bishops on long diagonals, rooks on open files, etc.
         for pos in range(64):
@@ -224,13 +250,13 @@ class GameManager:
             if piece and piece == 'bishops':
                 moves = self.get_valid_moves(pos)
                 if len(moves) > 4:  # Simplistic check for bishop effectiveness
-                    if color == 'white':
+                    if color == turn_color:
                         score += 1
                     else:
                         score -= 1
         return score
 
-    def evaluate_development(self):
+    def evaluate_development(self, turn_color):
         score = 0
         early_game = len(self.move_history) < 20  # Adjust as needed for the early game definition
         undeveloped_pieces = {'rooks': 2, 'knights': 3, 'bishops': 3}  # Penalty values for undeveloped pieces
@@ -239,7 +265,7 @@ class GameManager:
             piece, color = self.get_piece_at_position(pos)
             if piece in undeveloped_pieces:
                 if early_game and not self.piece_has_moved(pos):
-                    score += undeveloped_pieces[piece] if color == 'white' else -undeveloped_pieces[piece]
+                    score += undeveloped_pieces[piece] if color == turn_color else -undeveloped_pieces[piece]
 
         return score
 
@@ -247,13 +273,13 @@ class GameManager:
         # Simple check if a piece has moved, based on its current position vs initial position
         return pos in [self.move_history[i]['from_pos'] for i in range(len(self.move_history))]
 
-    def evaluate_advanced_king_safety(self):
+    def evaluate_advanced_king_safety(self, turn_color):
         score = 0
         # Assuming we already have methods to determine open files or dangerous diagonals
         for color in ['white', 'black']:
             king_pos = self.find_king(color)
             if self.is_file_open(king_pos) or self.is_diagonal_open(king_pos):
-                score -= 5 if color == 'white' else 5  # Adding a penalty for king exposure
+                score -= 5 if color == turn_color else 5  # Adding a penalty for king exposure
 
         return score
 
@@ -266,16 +292,16 @@ class GameManager:
         # Simplistic check; should be refined based on actual diagonal threats
         return False  # Placeholder for diagonal checks
 
-    def evaluate_pawn_chains_and_blocks(self):
+    def evaluate_pawn_chains_and_blocks(self, turn_color):
         score = 0
         # Pawn chains and blocked pawns
         for pos in range(64):
             piece, color = self.get_piece_at_position(pos)
             if piece == 'pawns':
                 if self.is_pawn_in_chain(pos, color):
-                    score += 1 if color == 'white' else -1
+                    score += 1 if color == turn_color else -1
                 if self.is_pawn_blocked(pos, color):
-                    score -= 1 if color == 'white' else 1
+                    score -= 1 if color == turn_color else 1
 
         return score
 
@@ -295,7 +321,7 @@ class GameManager:
             return bool(self.white_pawns & (1 << (pos - 8)))
         return False
 
-    def evaluate_pawn_structure(self):
+    def evaluate_pawn_structure(self, turn_color):
         score = 0
         isolated_penalty = 0
         doubled_penalty = -1
@@ -330,9 +356,9 @@ class GameManager:
                 score -= backward * backward_penalty
                 score -= passed * passed_pawn_bonus
 
-        return score
+        return score if turn_color == 'white' else -score
 
-    def evaluate_king_safety(self):
+    def evaluate_king_safety(self, turn_color):
         score = 0
         pawn_shield_bonus = 1
 
@@ -346,9 +372,9 @@ class GameManager:
         has_pawn_shield = self.has_pawn_shield(black_king_pos, 'black')
         score -= has_pawn_shield * pawn_shield_bonus
 
-        return score
+        return score if turn_color == 'white' else -score
 
-    def evaluate_center_control(self):
+    def evaluate_center_control(self, turn_color):
         score = 0
         center_squares = [27, 28, 35, 36]
         center_control_weight = 2
@@ -367,9 +393,9 @@ class GameManager:
                 if pos in center_squares:
                     score -= center_control_weight
 
-        return score
+        return score if turn_color == 'white' else -score
 
-    def evaluate_mobility(self):
+    def evaluate_mobility(self, turn_color):
         score = 0
         for pos in range(64):
             piece, color = self.get_piece_at_position(pos)
@@ -377,7 +403,7 @@ class GameManager:
                 score += len(self.get_valid_moves(pos))
             elif piece and color == 'black':
                 score -= len(self.get_valid_moves(pos))
-        return score
+        return score if turn_color == 'white' else -score
 
     def is_pawn_isolated(self, pos, color):
         rank, file = pos // 8, pos % 8
@@ -442,11 +468,28 @@ class GameManager:
         else:
             pawn_bitboard = self.black_pawns
 
-        pawn_shield_masks = [
-            pawn_bitboard >> 7, pawn_bitboard >> 8, pawn_bitboard >> 9,
-            pawn_bitboard << 7, pawn_bitboard << 9
-        ]
-        return any(mask & (1 << king_pos) for mask in pawn_shield_masks)
+        pawn_shield_masks = []
+
+        # Ensure shifts are only added if they don't result in negative shift counts
+        if king_pos % 8 != 0:  # not on the 'a' file, can shift left
+            if king_pos >= 8:  # can shift down left
+                pawn_shield_masks.append(pawn_bitboard >> 7)
+            if king_pos < 56:  # can shift up left
+                pawn_shield_masks.append(pawn_bitboard << 9)
+
+        if king_pos % 8 != 7:  # not on the 'h' file, can shift right
+            if king_pos >= 8:  # can shift down right
+                pawn_shield_masks.append(pawn_bitboard >> 9)
+            if king_pos < 56:  # can shift up right
+                pawn_shield_masks.append(pawn_bitboard << 7)
+
+        # Shifts for the vertical direction
+        if king_pos >= 8:  # can shift directly down
+            pawn_shield_masks.append(pawn_bitboard >> 8)
+        if king_pos < 56:  # can shift directly up
+            pawn_shield_masks.append(pawn_bitboard << 8)
+
+        return any(mask & (1 << (king_pos % 64)) for mask in pawn_shield_masks)
 
     # View Board
     def print_board(self):
@@ -493,9 +536,11 @@ class GameManager:
             capture_pos = pos + direction + offset
             if not (0 <= capture_pos < 64):
                 break
-            # Check wrapping
-            if abs((pos // 8) - (capture_pos // 8)) != 1:
-                break
+            # Check if the capture move wraps around the board
+            if pos // 8 == capture_pos // 8 or abs(pos % 8 - capture_pos % 8) == 1:
+                captured_piece, captured_color = self.get_piece_at_position(capture_pos)
+                if captured_piece and captured_color != piece_color:
+                    moves.append(capture_pos)
             captured_piece, captured_color = self.get_piece_at_position(capture_pos)
             if captured_piece and captured_color != piece_color:
                 moves.append(capture_pos)
@@ -645,3 +690,8 @@ class GameManager:
                 else:
                     pieces.append(piece_class((pos // 8, pos % 8), 'black'))
         return pieces
+
+    def is_game_over(self):
+        if self.is_checkmate('white') or self.is_checkmate('black'):
+            return True
+        return False
